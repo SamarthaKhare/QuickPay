@@ -83,6 +83,25 @@ _MONTH_NUM = {
 }
 
 
+def _looks_like_other_field(fields: dict[str, object]) -> bool:
+    """True if the input already produced a structured field other than a name."""
+
+    return any(
+        key in fields
+        for key in (
+            "account_id",
+            "dob",
+            "aadhaar_last4",
+            "pincode",
+            "payment_amount",
+            "pay_full_balance",
+            "card_number",
+            "cvv",
+            "expiry_month",
+        )
+    )
+
+
 def _spoken_to_digits(text: str) -> str:
     """Collapse runs of spoken digits into contiguous numerals.
 
@@ -121,10 +140,43 @@ def _spoken_to_digits(text: str) -> str:
     return "".join(out)
 
 
+_NAME_PREFIX_RE = re.compile(
+    r"(?i)^\s*(?:my\s+name\s+is|name\s*[:\-]|i\s+am|i'm|it'?s|call\s+me|this\s+is)\s+",
+)
+_FULL_NAME_PHRASE_RE = re.compile(
+    r"(?i)(?:full\s+name\s+is|legal\s+name\s+is|name\s+is|i'?m|name\s*[:\-])\s+([A-Z][\w'\-]+(?:\s+[A-Z][\w'\-]+)+)"
+)
+_NAME_WORDS_RE = re.compile(r"^[A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){0,4}\s*$")
+
+
+def _extract_name_heuristic(text: str) -> str | None:
+    """Best-effort name extraction when the LLM is not available.
+
+    The LLM does this far better; this exists so the agent stays usable on
+    clean inputs ("Nithin Jain", "my name is Nithin Jain") without an API key.
+    """
+
+    if not text:
+        return None
+    if m := _FULL_NAME_PHRASE_RE.search(text):
+        return " ".join(m.group(1).split())
+    stripped = _NAME_PREFIX_RE.sub("", text).strip().rstrip(".")
+    if not stripped:
+        return None
+    if _NAME_WORDS_RE.match(stripped) and any(ch.isalpha() for ch in stripped):
+        # Avoid swallowing one-word "ok"/"yes" tokens.
+        if stripped.lower() in {"yes", "no", "ok", "okay", "sure", "thanks", "hi", "hello"}:
+            return None
+        words = stripped.split()
+        if len(words) >= 2:
+            return " ".join(words)
+    return None
+
+
 class DeterministicExtractor:
     """Regex-driven extraction for the unambiguous cases."""
 
-    def extract(self, user_input: str) -> ExtractedFields:
+    def extract(self, user_input: str, *, expect_name: bool = False) -> ExtractedFields:
         text = _spoken_to_digits(user_input)
         fields: dict[str, object] = {}
 
@@ -186,6 +238,15 @@ class DeterministicExtractor:
         amount = self._extract_amount(text, has_card=bool(fields.get("card_number")))
         if amount is not None:
             fields["payment_amount"] = amount
+
+        # Names: try explicit "my name is" phrasing first, then fall back to
+        # using the whole input as a name when the orchestrator told us to.
+        if name := _FULL_NAME_PHRASE_RE.search(user_input):
+            fields["full_name"] = " ".join(name.group(1).split())
+        elif expect_name and "full_name" not in fields:
+            heuristic = _extract_name_heuristic(user_input)
+            if heuristic and not _looks_like_other_field(fields):
+                fields["full_name"] = heuristic
 
         return ExtractedFields(**fields)
 
@@ -349,7 +410,19 @@ class CompositeExtractor:
         awaiting: str,
         already_known: Iterable[str],
     ) -> ExtractedFields:
-        deterministic = self._deterministic.extract(user_input)
+        known = set(already_known)
+        # The deterministic extractor only knows one "full_name" slot; the agent
+        # routes that into either candidate_name or cardholder_name depending
+        # on phase. During verification we want the slot if full_name is
+        # missing; during card collection we want the slot if cardholder_name
+        # is missing — `full_name` being known should not gate the latter.
+        if awaiting == "verification_factors":
+            expect_name = "full_name" not in known
+        elif awaiting == "card_details":
+            expect_name = "cardholder_name" not in known
+        else:
+            expect_name = False
+        deterministic = self._deterministic.extract(user_input, expect_name=expect_name)
         llm = self._llm.extract(
             user_input, awaiting=awaiting, already_known=already_known
         )
