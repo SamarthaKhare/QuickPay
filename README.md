@@ -30,6 +30,12 @@ cp .env.example .env  # add your ANTHROPIC_API_KEY
 python cli.py
 ```
 
+> **LLM provider:** the natural-language extraction layer uses the Anthropic
+> Claude API. Set `ANTHROPIC_API_KEY` in `.env` to enable it. Without a key
+> the agent still runs end-to-end via the deterministic extractor — useful
+> for hermetic test runs, but it won't handle the messiest phrasing in the
+> assignment's examples as gracefully.
+
 Programmatic use matches the required interface exactly:
 
 ```python
