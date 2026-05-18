@@ -144,10 +144,10 @@ _NAME_PREFIX_RE = re.compile(
     r"(?i)^\s*(?:my\s+name\s+is|name\s*[:\-]|i\s+am|i'm|it'?s|call\s+me|this\s+is)\s+",
 )
 _FULL_NAME_PHRASE_RE = re.compile(
-    r"(?i)(?:full\s+name\s+is|legal\s+name\s+is|name\s+is|i'?m|name\s*[:\-])\s+([A-Z][\w'\-]+(?:\s+[A-Z][\w'\-]+)+)"
+    r"(?:(?i:full\s+name\s+is|legal\s+name\s+is|name\s+is|i\s*am|i'?m|this\s+is|call\s+me|name\s*[:\-]))\s+([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+)+)"
 )
 _CARDHOLDER_PHRASE_RE = re.compile(
-    r"(?i)(?:name\s+on\s+(?:the\s+)?card(?:\s+is|\s*[:\-])|cardholder(?:\s+name)?(?:\s+is|\s*[:\-]))\s+([A-Z][\w'\-]+(?:\s+[A-Z][\w'\-]+)+)"
+    r"(?:(?i:name\s+on\s+(?:the\s+)?card(?:\s+is|\s*[:\-])|cardholder(?:\s+name)?(?:\s+is|\s*[:\-])))\s+([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+)+)"
 )
 _NAME_WORDS_RE = re.compile(r"^[A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){0,4}\s*$")
 

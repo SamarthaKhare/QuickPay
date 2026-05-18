@@ -228,6 +228,52 @@ def test_pii_not_echoed(acc1001):
     assert "400001" not in response
 
 
+def test_out_of_order_info_does_not_reask(acc1001):
+    """User supplies account + name in one turn — agent should not ask for name again."""
+
+    api = FakeAPIClient({"ACC1001": acc1001})
+    agent = make_agent(api)
+    reply(agent, "hi")
+    response = reply(agent, "my account is ACC1001 and my name is Nithin Jain")
+    # Should be asking for a secondary factor, not the name we already have.
+    assert "full name" not in response.lower() or "secondary" in response.lower() or "date of birth" in response.lower()
+    assert agent._state.candidate_name == "Nithin Jain"
+
+
+def test_card_data_wiped_after_success(acc1001):
+    api = FakeAPIClient({"ACC1001": acc1001})
+    agent = make_agent(api)
+    for turn in [
+        "hi", "ACC1001", "Nithin Jain", "1990-05-14", "pay 100",
+        "Nithin Jain", "4532 0151 1283 0366", "12/27 CVV 123", "yes",
+    ]:
+        reply(agent, turn)
+    state = agent._state
+    assert state.card_number is None
+    assert state.cvv is None
+    assert state.expiry_month is None
+    assert state.expiry_year is None
+    assert state.cardholder_name is None
+    assert state.last_transaction_id is not None  # success metadata kept
+
+
+def test_card_data_wiped_after_terminal_failure(acc1001):
+    api = FakeAPIClient(
+        {"ACC1001": acc1001},
+        payment_results=[PaymentFailure(success=False, error_code="invalid_cvv")] * 3,
+    )
+    agent = make_agent(api)
+    for turn in [
+        "hi", "ACC1001", "Nithin Jain", "1990-05-14", "full amount",
+        "Nithin Jain", "4532 0151 1283 0366", "12/27 CVV 123", "yes",
+        "4532 0151 1283 0366", "12/27 CVV 123", "yes",
+        "4532 0151 1283 0366", "12/27 CVV 123", "yes",
+    ]:
+        reply(agent, turn)
+    state = agent._state
+    assert state.card_number is None and state.cvv is None
+
+
 def test_cancellation_terminates(acc1001):
     api = FakeAPIClient({"ACC1001": acc1001})
     agent = make_agent(api)

@@ -323,7 +323,17 @@ class Agent:
             )
 
         self._state.phase = Phase.AWAITING_VERIFICATION
-        return self._verification_prompt(first_time=True)
+
+        # If the user volunteered identity factors in the same turn as the
+        # account ID, run the verifier immediately rather than reprompting.
+        if self._state.candidate_name:
+            return self._handle_awaiting_verification("", ExtractedFields())
+
+        return (
+            "Thanks — I've pulled up your account. "
+            "Before I can share any details, I need to verify your identity. "
+            "Could you confirm your full name to start?"
+        )
 
     # -------------------------------------------------- phase: verification --
 
@@ -399,15 +409,6 @@ class Agent:
             "Could you try again with your date of birth, last 4 of Aadhaar, or pincode? "
             f"({remaining} {attempts_word} remaining)"
         )
-
-    def _verification_prompt(self, *, first_time: bool) -> str:
-        if first_time:
-            return (
-                "Thanks — I've pulled up your account. "
-                "Before I can share any details, I need to verify your identity. "
-                "Could you confirm your full name to start?"
-            )
-        return self._handle_awaiting_verification("", ExtractedFields())
 
     # ------------------------------------------------------ phase: amount --
 
@@ -516,10 +517,17 @@ class Agent:
 
         if isinstance(result, PaymentSuccess):
             state.last_transaction_id = result.transaction_id
-            state.phase = Phase.DONE_SUCCESS
+            account_id = state.account_id
             amount = _format_inr(state.payment_amount)
+            last4 = state.card_number[-4:]
+            # Card data is no longer needed — wipe it from memory before
+            # surfacing the success message.
+            state.reset_card_fields()
+            state.cardholder_name = None
+            state.phase = Phase.DONE_SUCCESS
             return (
-                f"Payment of {amount} processed successfully. "
+                f"Payment of {amount} processed successfully on account {account_id} "
+                f"using the card ending {last4}. "
                 f"Your transaction ID is {result.transaction_id}. "
                 "Thanks for using QuickPay — have a great day!"
             )
@@ -579,6 +587,8 @@ class Agent:
             state.reset_card_fields()
             state.phase = Phase.AWAITING_CARD
             if terminal:
+                state.reset_card_fields()
+                state.cardholder_name = None
                 state.phase = Phase.DONE_FAILED
                 return (
                     "We've tried a few times and the payment still isn't going through. "
@@ -588,6 +598,8 @@ class Agent:
 
         # Unknown error code from the server — log and close gracefully.
         _LOG.warning("Unknown payment error_code: %s", code)
+        state.reset_card_fields()
+        state.cardholder_name = None
         state.phase = Phase.DONE_FAILED
         return (
             "The payment didn't go through, and the issue isn't one I can fix automatically. "

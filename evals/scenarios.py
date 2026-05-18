@@ -108,7 +108,31 @@ def all_scenarios() -> list[Scenario]:
         _payment_invalid_cvv_terminal(),
         _amount_above_balance_local_block(),
         _messy_phrasing_full_flow(),
+        _out_of_order_info(),
     ]
+
+
+def _out_of_order_info() -> Scenario:
+    return Scenario(
+        name="out_of_order_info",
+        description="User volunteers account + name in one turn; agent must not re-ask.",
+        accounts=DEFAULT_ACCOUNTS,
+        user_turns=[
+            "Hi I am Nithin Jain account ACC1001",
+            "1990-05-14",
+            "pay 100",
+            "Nithin Jain",
+            "4532 0151 1283 0366",
+            "12/27 CVV 123",
+            "yes",
+        ],
+        expect=Expect(
+            final_phase=Phase.DONE_SUCCESS,
+            min_payment_calls=1,
+            max_payment_calls=1,
+            payment_amount=Decimal("100.00"),
+        ),
+    )
 
 
 def _happy_path_full_balance() -> Scenario:
