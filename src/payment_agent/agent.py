@@ -650,8 +650,16 @@ _NO_TOKENS = {"n", "no", "nope", "nah", "stop", "cancel", "wait", "hold on", "do
 
 
 def _looks_like_yes(text: str) -> bool:
-    return text.strip().lower() in _YES_TOKENS
+    normalised = text.strip().lower()
+    if normalised in _YES_TOKENS:
+        return True
+    first = normalised.split()[0] if normalised else ""
+    return first in _YES_TOKENS
 
 
 def _looks_like_no(text: str) -> bool:
-    return text.strip().lower() in _NO_TOKENS
+    normalised = text.strip().lower()
+    if normalised in _NO_TOKENS:
+        return True
+    first = normalised.split()[0] if normalised else ""
+    return first in _NO_TOKENS

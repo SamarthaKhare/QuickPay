@@ -146,6 +146,9 @@ _NAME_PREFIX_RE = re.compile(
 _FULL_NAME_PHRASE_RE = re.compile(
     r"(?i)(?:full\s+name\s+is|legal\s+name\s+is|name\s+is|i'?m|name\s*[:\-])\s+([A-Z][\w'\-]+(?:\s+[A-Z][\w'\-]+)+)"
 )
+_CARDHOLDER_PHRASE_RE = re.compile(
+    r"(?i)(?:name\s+on\s+(?:the\s+)?card(?:\s+is|\s*[:\-])|cardholder(?:\s+name)?(?:\s+is|\s*[:\-]))\s+([A-Z][\w'\-]+(?:\s+[A-Z][\w'\-]+)+)"
+)
 _NAME_WORDS_RE = re.compile(r"^[A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){0,4}\s*$")
 
 
@@ -164,10 +167,18 @@ def _extract_name_heuristic(text: str) -> str | None:
     if not stripped:
         return None
     if _NAME_WORDS_RE.match(stripped) and any(ch.isalpha() for ch in stripped):
-        # Avoid swallowing one-word "ok"/"yes" tokens.
+        words = stripped.split()
+        leading = words[0].lower()
+        # Affirmations / negations / pleasantries are never names, even when
+        # padded with words like "please" or "go ahead".
+        if leading in {
+            "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "no", "nope",
+            "nah", "stop", "cancel", "go", "do", "proceed", "thanks", "thank",
+            "hi", "hello", "hey", "please",
+        }:
+            return None
         if stripped.lower() in {"yes", "no", "ok", "okay", "sure", "thanks", "hi", "hello"}:
             return None
-        words = stripped.split()
         if len(words) >= 2:
             return " ".join(words)
     return None
@@ -239,11 +250,12 @@ class DeterministicExtractor:
         if amount is not None:
             fields["payment_amount"] = amount
 
-        # Names: try explicit "my name is" phrasing first, then fall back to
-        # using the whole input as a name when the orchestrator told us to.
+        # Names: card-specific phrasing wins; otherwise generic "name is".
+        if cardholder := _CARDHOLDER_PHRASE_RE.search(user_input):
+            fields["cardholder_name"] = " ".join(cardholder.group(1).split())
         if name := _FULL_NAME_PHRASE_RE.search(user_input):
-            fields["full_name"] = " ".join(name.group(1).split())
-        elif expect_name and "full_name" not in fields:
+            fields.setdefault("full_name", " ".join(name.group(1).split()))
+        if expect_name and "full_name" not in fields and "cardholder_name" not in fields:
             heuristic = _extract_name_heuristic(user_input)
             if heuristic and not _looks_like_other_field(fields):
                 fields["full_name"] = heuristic
